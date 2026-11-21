@@ -26,7 +26,7 @@ Historical orders store aggregate GST. When an invoice is printed, its line GST 
 
 ## Architecture
 
-[Open the HTML diagram in the running app](http://localhost:3000/architecture.html). You can also download the [standalone HTML file](public/architecture.html) and open it offline. It includes the system map, checkout sequence, and the invoice, cancellation, order history, and settlement flows.
+[Open the architecture explorer in the running app](http://localhost:3000/architecture.html). You can also download the [standalone HTML file](public/architecture.html) and open it offline. Choose a workflow, step through the request, and select any module to inspect its responsibilities and source files. The explorer covers checkout, pricing preview, invoices, GST reconciliation, order history, cancellation, and Khata settlements. Scenarios show when a request reads or writes the store and where rejected requests exit.
 
 ```mermaid
 flowchart LR

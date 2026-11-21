@@ -3,218 +3,615 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="ShopLedger architecture and request flows for billing, inventory, and Khata.">
-  <title>ShopLedger architecture</title>
+  <meta name="description" content="Trace ShopLedger requests through the browser, Express, business rules, and JSON storage.">
+  <title>ShopLedger · Architecture explorer</title>
   <style>
     :root {
       color-scheme: light;
-      --canvas: #f4f7fa;
-      --paper: #ffffff;
-      --ink: #162640;
-      --muted: #465772;
-      --line: #cbd6e4;
-      --blue: #254e97;
-      --blue-surface: #eef4ff;
-      --teal: #0d6158;
-      --teal-surface: #e6f6f2;
-      --amber: #744808;
-      --amber-surface: #fff5e2;
-      font: 16px/1.55 system-ui, sans-serif;
-      scroll-padding-top: 1rem;
+      font: 16px/1.5 system-ui, sans-serif;
+      --ink: #192b39;
+      --muted: #51636e;
+      --paper: #fff;
+      --canvas: #edf2ef;
+      --line: #d4ded9;
+      --green: #17634e;
+      --mint: #dff5ea;
+      --blue: #244d79;
+      --amber: #784713;
+      --diagram: #142c34;
     }
-
     * { box-sizing: border-box; }
-    body { margin: 0; background: var(--canvas); color: var(--ink); }
-    a { color: inherit; text-underline-offset: 0.2em; }
-    a:focus-visible { outline: 3px solid currentColor; outline-offset: 4px; }
-    code { font: 0.9em ui-monospace, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
-    h1, h2, h3, p, ol, ul { margin-block-start: 0; }
-    h1, h2, h3 { line-height: 1.18; }
-    h1 { margin-block-end: 0.7rem; font-size: clamp(2rem, 5vw, 3.5rem); letter-spacing: -0.04em; }
-    h2 { margin-block-end: 0.6rem; font-size: clamp(1.35rem, 3vw, 2rem); letter-spacing: -0.03em; }
-    h3 { margin-block-end: 0.55rem; font-size: 1.05rem; }
-
-    .wrap { width: min(100% - 2rem, 72rem); margin-inline: auto; }
-    header { background: #142640; color: white; padding-block: clamp(2rem, 6vw, 4.25rem) 1.45rem; }
-    header p { color: #d8e5f6; max-width: 55ch; }
-    nav { display: flex; flex-wrap: wrap; gap: 0.55rem 1.25rem; font-weight: 600; }
-    main { padding-block: 1.75rem 3rem; }
-    section + section { margin-top: 1.75rem; }
-    .panel { background: var(--paper); padding: clamp(1rem, 3vw, 1.6rem); border: 1px solid var(--line); border-radius: 1rem; }
-    .intro, .fine-print { color: var(--muted); max-width: 76ch; }
-
-    .flow {
-      display: grid;
-      grid-template-columns: repeat(var(--columns, 3), minmax(0, 1fr));
-      gap: 1.75rem;
-      padding: 0;
-      margin: 1.2rem 0 0;
-      list-style: none;
+    [hidden] { display: none !important; }
+    body { margin: 0; color: var(--ink); background: var(--canvas); }
+    .page { width: min(100% - 2rem, 82rem); margin-inline: auto; }
+    header { padding-block: 1.65rem 1.35rem; }
+    h1, h2, h3, p, ol, ul, dl, dd { margin: 0; }
+    h1, h2, h3 { line-height: 1.14; }
+    h1 { font-size: clamp(1.9rem, 4vw, 3.2rem); letter-spacing: -0.055em; }
+    h2 { font-size: 1.2rem; letter-spacing: -0.02em; }
+    h3 { font-size: 1.1rem; }
+    p { color: var(--muted); }
+    header p { margin-top: 0.45rem; max-width: 66ch; }
+    code { font: 0.875em/1.45 ui-monospace, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+    button, select { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    button:disabled { cursor: default; opacity: 0.48; }
+    :focus-visible { outline: 3px solid #166e56; outline-offset: 3px; }
+    .workspace { display: grid; grid-template-columns: 12rem minmax(0, 1fr); gap: 1rem; padding-bottom: 2rem; }
+    .sidebar, .detail, .flow { background: var(--paper); border: 1px solid var(--line); border-radius: 0.85rem; }
+    .sidebar { align-self: start; padding: 0.9rem; }
+    .sidebar h2 { padding: 0.25rem 0.45rem 0.65rem; font-size: 1rem; }
+    .workflow-list { display: grid; gap: 0.2rem; }
+    .workflow-list button {
+      text-align: left;
+      padding: 0.55rem 0.55rem;
+      border: 1px solid transparent;
+      border-radius: 0.45rem;
+      background: transparent;
+      font-size: 0.875rem;
+      font-weight: 650;
     }
-    .flow > li {
-      position: relative;
-      min-width: 0;
-      padding: 0.85rem 0.95rem;
-      border: 1px solid var(--line);
-      border-radius: 0.7rem;
-      background: var(--blue-surface);
-    }
-    .flow > li:not(:last-child)::after {
-      content: "";
-      position: absolute;
-      z-index: 1;
-      width: 1.55rem;
-      height: 0.75rem;
-      top: calc(50% - 0.375rem);
-      left: calc(100% + 0.1rem);
-      background: var(--blue);
-      clip-path: polygon(0 43%, 72% 43%, 72% 10%, 100% 50%, 72% 90%, 72% 57%, 0 57%);
-    }
-    .flow p, .card p { margin: 0; color: var(--muted); }
-    .flow .rules, .workflow > li { background: var(--teal-surface); }
-    .workflow { --columns: 5; counter-reset: steps; }
-    .workflow > li { counter-increment: steps; }
-    .workflow h3 { display: flex; align-items: baseline; gap: 0.45rem; }
-    .workflow h3::before { content: counter(steps) "."; color: var(--teal); }
-
-    .storage {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-      align-items: center;
-      gap: 0.65rem;
-      margin-top: 1rem;
-      padding: 0.9rem;
-      border-radius: 0.7rem;
-      color: var(--amber);
-      background: var(--amber-surface);
+    .workflow-list button:hover { background: #edf5f1; }
+    .workflow-list [aria-pressed="true"] { background: var(--mint); border-color: #b3dac9; color: #145441; }
+    .content { min-width: 0; display: grid; gap: 0.85rem; }
+    .flow { padding: clamp(0.8rem, 2.15vw, 1.35rem); }
+    .flow-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 0.7rem; }
+    .flow-head code { display: block; margin-top: 0.25rem; color: var(--blue); font-weight: 700; }
+    .scenario { display: grid; gap: 0.2rem; max-width: 100%; }
+    .scenario label { font-size: 0.8rem; font-weight: 700; color: var(--muted); }
+    .scenario select {
+      padding: 0.4rem 0.6rem;
+      max-width: 100%;
+      background: #f6faf8;
+      border: 1px solid #b5c7be;
+      border-radius: 0.4rem;
       font-weight: 600;
-      text-align: center;
+      font-size: 0.875rem;
     }
-    .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.9rem; margin-top: 1rem; }
-    .card { min-width: 0; padding: 0.9rem; border: 1px solid var(--line); border-radius: 0.7rem; }
-    .card code { display: block; color: var(--blue); margin-bottom: 0.45rem; }
-    .fine-print { margin: 1rem 0 0; }
-
-    @media (max-width: 58rem) {
-      .workflow { --columns: 1; }
-      .workflow > li:not(:last-child)::after {
-        top: calc(100% + 0.55rem);
-        left: calc(50% - 0.775rem);
-        transform: rotate(90deg);
-      }
+    .flow-summary { margin-top: 0.6rem; font-size: 0.9rem; }
+    .map {
+      --connector: #78969a;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 1.4rem minmax(0, 1fr) 1.4rem minmax(0, 1fr);
+      grid-template-rows: auto 1.75rem auto;
+      grid-template-areas:
+        "browser send route invoke rules"
+        ". . disk . ."
+        ". . store transfer database";
+      align-items: stretch;
+      margin-top: 0.95rem;
+      padding: clamp(0.75rem, 2vw, 1.25rem);
+      border-radius: 0.75rem;
+      color: #e4efec;
+      background: radial-gradient(#315059 1px, transparent 1px) 0 0 / 17px 17px, var(--diagram);
     }
-    @media (max-width: 42rem) {
-      .flow, .cards { grid-template-columns: 1fr; }
-      .flow > li:not(:last-child)::after {
-        top: calc(100% + 0.55rem);
-        left: calc(50% - 0.775rem);
-        transform: rotate(90deg);
-      }
+    .module {
+      min-width: 0;
+      position: relative;
+      padding: 0.6rem 0.65rem;
+      border: 1px solid #78969a;
+      border-radius: 0.55rem;
+      background: #1b393f;
+      color: inherit;
+      text-align: left;
     }
-    @media print {
-      body, header { background: white; color: #162640; }
-      header p { color: #465772; }
-      nav { display: none; }
-      .wrap { width: 100%; }
-      header, main { padding-block: 1rem; }
-      .panel { break-inside: avoid; }
-      .workflow { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-      .workflow > li:not(:last-child)::after {
-        top: calc(50% - 0.375rem);
-        left: calc(100% + 0.1rem);
-        transform: none;
-      }
+    .module:hover { background: #24504f; }
+    .module:focus-visible { outline-color: #a1f2d4; }
+    .module strong, .module code { display: block; }
+    .module strong { font-size: 0.86rem; }
+    .module code { margin-top: 0.2rem; font-size: 0.72rem; color: #bed5d1; }
+    .module[aria-pressed="true"] { box-shadow: 0 0 0 2px #addfea; }
+    .module.is-current { border-color: #a7f1d3; background: #d9faeb; color: #153f36; }
+    .module.is-current code { color: #21584a; }
+    .connector { position: relative; display: grid; place-items: center; font-weight: 700; color: var(--connector); }
+    .connector.is-active { color: #a7f1d3; }
+    .storage-link { justify-self: center; }
+    .map-caption { margin-top: 0.55rem; font-size: 0.8rem; }
+    .exploration { display: grid; grid-template-columns: minmax(13rem, 0.75fr) minmax(0, 1.25fr); gap: 0.85rem; }
+    .detail { min-width: 0; padding: clamp(0.85rem, 2vw, 1.15rem); }
+    .detail h2 { margin-bottom: 0.6rem; }
+    .step-list { list-style: none; padding: 0; display: grid; gap: 0.3rem; }
+    .step-list button {
+      display: grid;
+      grid-template-columns: 1.35rem minmax(0, 1fr);
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.47rem;
+      width: 100%;
+      border: 1px solid transparent;
+      border-radius: 0.4rem;
+      background: transparent;
+      text-align: left;
+      font-size: 0.84rem;
+    }
+    .step-list button:hover { background: #f0f6f3; }
+    .step-list [aria-current="step"] { border-color: #b5dbc9; background: var(--mint); font-weight: 750; }
+    .step-index { text-align: center; color: var(--green); font-weight: 750; }
+    .step-nav { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+    .action {
+      min-height: 2.3rem;
+      padding: 0.25rem 0.65rem;
+      border: 1px solid #9eb6a9;
+      border-radius: 0.42rem;
+      background: #f6faf8;
+      font-size: 0.84rem;
+      font-weight: 700;
+    }
+    .action:hover:not(:disabled) { background: var(--mint); }
+    .next { margin-left: auto; background: var(--green); border-color: var(--green); color: white; }
+    .next:hover:not(:disabled) { background: #104e3d; }
+    .inspection-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 0.55rem; }
+    .inspection-head h2 { margin: 0; }
+    .inspection p { margin-top: 0.65rem; font-size: 0.92rem; }
+    .status {
+      border-radius: 1rem;
+      background: #eef3f4;
+      color: #344d57;
+      padding: 0.15rem 0.55rem;
+      font-size: 0.75rem;
+      font-weight: 750;
+      white-space: nowrap;
+    }
+    .status[data-type="Read from disk"] { background: #e5efff; color: var(--blue); }
+    .status[data-type="Write to disk"] { background: #ffedcf; color: var(--amber); }
+    .source-list { padding: 0; margin-top: 0.75rem; list-style: none; display: flex; flex-wrap: wrap; gap: 0.35rem; }
+    .source-list code { display: block; background: #edf2f0; padding: 0.2rem 0.4rem; border-radius: 0.3rem; }
+    .example { margin-top: 0.9rem; padding: 0.65rem 0.75rem; background: #f0f7f3; border-left: 3px solid #42836b; }
+    .example h3 { font-size: 0.83rem; }
+    .example p { margin-top: 0.25rem; color: var(--ink); font-size: 0.88rem; }
+    .return { margin-top: 0.85rem; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+    @media (max-width: 60rem) {
+      .workspace { grid-template-columns: 1fr; }
+      .workflow-list { display: flex; flex-wrap: wrap; }
+    }
+    @media (max-width: 43rem) {
+      .exploration { grid-template-columns: 1fr; }
+      .map { grid-template-columns: minmax(0, 1fr) 0.9rem minmax(0, 1fr) 0.9rem minmax(0, 1fr); }
+      .module { padding: 0.42rem; }
+      .module strong { font-size: 0.74rem; }
+      .module code { font-size: 0.68rem; }
+      .step-list { grid-template-columns: repeat(auto-fit, minmax(2.25rem, 1fr)); }
+      .step-list button { display: block; min-height: 2.25rem; border-color: var(--line); text-align: center; }
+      .step-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     }
   </style>
 </head>
 <body>
-  <header>
-    <div class="wrap">
-      <h1>ShopLedger architecture</h1>
-      <p>Follow a request from the shop counter to the modules that price orders, update stock, and record payments.</p>
-      <nav aria-label="On this page">
-        <a href="#system">System map</a>
-        <a href="#checkout">Checkout</a>
-        <a href="#workflows">Other workflows</a>
-      </nav>
-    </div>
+  <header class="page">
+    <h1>ShopLedger architecture explorer</h1>
+    <p>Choose a workflow and trace it from the browser to Express, through the business rules, and back. Select any module to see what it owns.</p>
   </header>
-  <main class="wrap">
-    <section class="panel" id="system">
-      <h2>System map</h2>
-      <p class="intro">Express serves the browser UI, dispatches JSON API requests under <code>/api</code>, and returns printable invoice HTML from a separate route.</p>
-      <ol class="flow" role="list" aria-label="Request path">
-        <li>
-          <h3>Browser</h3>
-          <p><code>public/index.html</code> and <code>public/js/app.js</code> display the register, order history, inventory, and Khata balances.</p>
-        </li>
-        <li>
-          <h3>Express routes</h3>
-          <p><code>server.js</code> serves <code>public/</code> and connects the product, order, customer, and report routes.</p>
-        </li>
-        <li class="rules">
-          <h3>Business rules</h3>
-          <p><code>lib/</code> handles pricing, coupons, GST, inventory, orders, dates, Khata, invoices, and reports.</p>
-        </li>
-      </ol>
-      <div class="storage" aria-label="The handlers use the store module to read and write the JSON file">
-        <span>Request handlers</span><span aria-hidden="true">↔</span><span><code>lib/store.js</code> ↔ <code>data/db.json</code></span>
-      </div>
-      <p class="fine-print"><code>config.js</code> supplies coupon rules, GST slabs, and shop settings. The JSON file holds the shop's products, orders, customers, settlements, and audit log.</p>
-    </section>
 
-    <section class="panel" id="checkout">
-      <h2>Checkout</h2>
-      <p class="intro"><code>POST /api/orders</code> records an order after stock, coupon, and any applicable Khata credit checks succeed.</p>
-      <ol class="flow workflow" role="list" aria-label="Checkout sequence">
-        <li>
-          <h3>Resolve items</h3>
-          <p>Read the store and resolve the submitted product IDs and quantities.</p>
-        </li>
-        <li>
-          <h3>Check stock</h3>
-          <p>Check the combined quantity per product against physical stock minus wholesale holds.</p>
-        </li>
-        <li>
-          <h3>Price the order</h3>
-          <p>Validate the coupon, distribute its discount, and apply the GST slab to each discounted line.</p>
-        </li>
-        <li>
-          <h3>Apply changes</h3>
-          <p>Check the Khata credit limit and record the charge when applicable, then deduct physical stock.</p>
-        </li>
-        <li>
-          <h3>Save the sale</h3>
-          <p>Save the order totals and audit entry in the JSON file and return <code>201 Created</code>.</p>
-        </li>
-      </ol>
-    </section>
+  <main class="page workspace" id="explorer" hidden>
+    <aside class="sidebar" aria-labelledby="workflows-heading">
+      <h2 id="workflows-heading">Workflows</h2>
+      <div class="workflow-list" id="workflow-list" role="group" aria-labelledby="workflows-heading"></div>
+    </aside>
 
-    <section class="panel" id="workflows">
-      <h2>Other workflows</h2>
-      <div class="cards">
-        <article class="card">
-          <h3>Invoice and GST audit</h3>
-          <code>GET /orders/:id/invoice<br>GET /api/reports/gst-reconciliation</code>
-          <p>Both use <code>lib/invoice.js</code>. The invoice uses recorded totals and checkout's calculation for line GST. The reconciliation report compares the invoice summary with the ledger.</p>
-        </article>
-        <article class="card">
-          <h3>Cancel an order</h3>
-          <code>POST /api/orders/:id/cancel</code>
-          <p><code>lib/orders.js</code> checks the current status, returns physical stock, and reverses a Khata charge where applicable. Wholesale holds are preserved.</p>
-        </article>
-        <article class="card">
-          <h3>Order history</h3>
-          <code>GET /api/orders</code>
-          <p><code>lib/dates.js</code> converts saved dates and filter values into sortable keys. <code>lib/orders.js</code> applies the inclusive bounds and sorts newest first.</p>
-        </article>
-        <article class="card">
-          <h3>Khata settlement</h3>
-          <code>POST /api/customers/:id/settle</code>
-          <p><code>lib/ledger.js</code> validates the payment and updates the balance in whole paise. The customer route records the settlement and audit entry.</p>
-        </article>
+    <div class="content">
+      <section class="flow" aria-labelledby="flow-title">
+        <div class="flow-head">
+          <div>
+            <h2 id="flow-title"></h2>
+            <code id="endpoint"></code>
+          </div>
+          <div class="scenario" id="scenario-field" hidden>
+            <label for="scenario">Scenario</label>
+            <select id="scenario"></select>
+          </div>
+        </div>
+        <p class="flow-summary" id="flow-summary"></p>
+
+        <div class="map" role="group" aria-label="Architecture map">
+          <button class="module" style="grid-area: browser" type="button" data-node="browser" aria-pressed="false">
+            <strong>Browser</strong><code>public/<wbr>js/<wbr>app.js</code>
+          </button>
+          <span class="connector" style="grid-area: send" data-edge="send" aria-hidden="true">⇄</span>
+          <button class="module" style="grid-area: route" type="button" data-node="route" aria-pressed="false">
+            <strong>Express</strong><code id="route-file">server.js</code>
+          </button>
+          <span class="connector" style="grid-area: invoke" data-edge="invoke" aria-hidden="true">→</span>
+          <button class="module" style="grid-area: rules" type="button" data-node="rules" aria-pressed="false">
+            <strong>Business rules</strong><code>lib/</code>
+          </button>
+          <span class="connector storage-link" style="grid-area: disk" data-edge="disk" aria-hidden="true">↕</span>
+          <button class="module" style="grid-area: store" type="button" data-node="store" aria-pressed="false">
+            <strong>Store</strong><code>lib/<wbr>store.js</code>
+          </button>
+          <span class="connector" style="grid-area: transfer" data-edge="transfer" aria-hidden="true">↔</span>
+          <button class="module" style="grid-area: database" type="button" data-node="database" aria-pressed="false">
+            <strong>Data file</strong><code>data/<wbr>db.json</code>
+          </button>
+        </div>
+        <p class="map-caption" id="map-caption">The highlighted cards show where the selected step runs.</p>
+      </section>
+
+      <div class="exploration">
+        <section class="detail" aria-labelledby="steps-heading">
+          <h2 id="steps-heading">Request steps</h2>
+          <ol class="step-list" id="steps"></ol>
+          <div class="step-nav" aria-label="Step navigation">
+            <button class="action" id="previous" type="button">Previous</button>
+            <button class="action next" id="next" type="button">Next step</button>
+          </div>
+        </section>
+        <section class="detail inspection" aria-labelledby="detail-title">
+          <div class="inspection-head">
+            <h2 id="detail-title"></h2>
+            <span class="status" id="operation"></span>
+          </div>
+          <p id="detail-text"></p>
+          <ul class="source-list" id="source-files" aria-label="Source files"></ul>
+          <div class="example" id="example" hidden>
+            <h3>Example</h3>
+            <p id="example-text"></p>
+          </div>
+          <button class="action return" id="return-to-step" type="button" hidden>Show active step</button>
+          <p class="sr-only" id="announcement" role="status"></p>
+        </section>
       </div>
-    </section>
+    </div>
   </main>
+
+  <noscript>
+    <p class="page">Enable JavaScript to step through requests. The core path is browser → Express → business rules. Express handlers use the store module to read and write the JSON file.</p>
+  </noscript>
+
+  <script>
+    'use strict';
+
+    const READ = 'Read from disk';
+    const WRITE = 'Write to disk';
+    const MEMORY = 'In memory';
+    const HTTP = 'HTTP';
+
+    function step(title, layer, operation, text, sources, example) {
+      return { title, layer, operation, text, sources, example };
+    }
+
+    function scenario(name, summary, steps) {
+      return { name, summary, steps };
+    }
+
+    const checkoutSubmit = step('Submit the cart', 'browser', HTTP,
+      'The checkout form sends product IDs, quantities, a coupon code, and the payment mode to Express.',
+      ['public/js/app.js', 'routes/orders.js']);
+    const checkoutRead = step('Load products and accounts', 'store', READ,
+      'The order handler reads the JSON file and resolves each cart line to its saved product and price.',
+      ['routes/orders.js', 'lib/store.js']);
+    const checkoutStock = step('Check sellable quantities', 'rules', MEMORY,
+      'Inventory combines repeated lines for the same product and compares the total requested with physical stock minus wholesale holds.',
+      ['lib/inventory.js'], 'Four physical units − three wholesale holds = one sellable unit. A request for one unit can proceed.');
+    const checkoutPrice = step('Apply the coupon and GST', 'rules', MEMORY,
+      'Checkout validates the coupon and its limits, apportions the discount across the cart, and calculates rounded GST for each discounted line.',
+      ['lib/pricing.js', 'lib/coupons.js', 'lib/tax.js', 'config.js'],
+      'Two ₹1,000 lines at 5% and 12% with SAVE10 receive a capped ₹150 discount. GST is ₹157.25 and the customer pays ₹2,007.25.');
+    const checkoutSave = step('Save the sale and audit entry', 'store', WRITE,
+      'The handler adds the order with its recorded totals, appends an audit entry, and writes the updated JSON in one store call.',
+      ['routes/orders.js', 'lib/orders.js', 'lib/store.js']);
+    const checkoutResponse = step('Return the order', 'route', HTTP,
+      'Express returns 201 Created with the saved order. The browser can refresh the register and open the printable invoice.',
+      ['routes/orders.js', 'public/js/app.js']);
+    const cancellationSubmit = step('Request cancellation', 'browser', HTTP,
+      'The order desk sends the selected order ID and an optional reason.',
+      ['public/js/app.js', 'routes/orders.js']);
+    const cancellationRead = step('Look up the order', 'store', READ,
+      'The cancellation handler loads the store and looks for the requested order ID.',
+      ['routes/orders.js', 'lib/store.js', 'lib/orders.js']);
+    const settlementSubmit = step('Send the payment amount', 'browser', HTTP,
+      'The customer form sends the amount as text alongside the channel and note.',
+      ['public/js/app.js', 'routes/customers.js']);
+    const settlementRead = step('Load the account', 'store', READ,
+      'The customer route loads the store and asks the ledger module to find the account.',
+      ['routes/customers.js', 'lib/store.js', 'lib/ledger.js']);
+
+    const workflows = [
+      {
+        id: 'checkout', label: 'Checkout', route: 'routes/orders.js', endpoint: 'POST /api/orders',
+        scenarios: [
+          scenario('Cash sale', 'An accepted cash sale reduces physical stock and records the billed amounts.', [
+            checkoutSubmit, checkoutRead, checkoutStock, checkoutPrice,
+            step('Deduct physical stock', 'rules', MEMORY,
+              'Checkout subtracts the sold units from physical stock. Wholesale holds keep their original quantities.',
+              ['lib/inventory.js', 'routes/orders.js']),
+            checkoutSave, checkoutResponse
+          ]),
+          scenario('Khata sale', 'A Khata sale checks the credit limit before reducing stock and saving the customer charge.', [
+            checkoutSubmit, checkoutRead, checkoutStock, checkoutPrice,
+            step('Check credit and apply the charge', 'rules', MEMORY,
+              'The ledger compares the projected balance with the credit limit. When accepted, the handler charges the account and then deducts stock.',
+              ['lib/ledger.js', 'lib/inventory.js', 'routes/orders.js']),
+            checkoutSave, checkoutResponse
+          ]),
+          scenario('Insufficient stock', 'Checkout returns a conflict when the requested quantity exceeds sellable stock. This path reads the store and exits before the save.', [
+            checkoutSubmit, checkoutRead,
+            step('Reject the requested quantity', 'rules', MEMORY,
+              'The requested quantity exceeds physical stock after wholesale holds have been deducted.',
+              ['lib/inventory.js'], 'Four physical units − three holds = one sellable unit. A request for two units is rejected.'),
+            step('Return 409 Conflict', 'route', HTTP,
+              'The handler returns an out-of-stock response before calculating totals, charging Khata, or calling store.write.',
+              ['routes/orders.js'])
+          ]),
+          scenario('Khata credit limit exceeded', 'The credit check runs after pricing. A rejected Khata sale leaves both the balance and stock untouched.', [
+            checkoutSubmit, checkoutRead, checkoutStock, checkoutPrice,
+            step('Reject the projected balance', 'rules', MEMORY,
+              'The ledger compares the current balance plus the order total with the account limit and returns an error.',
+              ['lib/ledger.js'], 'A ₹4,000 balance plus a ₹2,007.25 order exceeds a ₹5,000 credit limit.'),
+            step('Return 409 Conflict', 'route', HTTP,
+              'The order handler passes back the credit error and exits before deducting stock or calling store.write.',
+              ['routes/orders.js'])
+          ])
+        ]
+      },
+      {
+        id: 'preview', label: 'Pricing preview', route: 'routes/reports.js', endpoint: 'POST /api/pricing/preview',
+        scenarios: [scenario('Cart preview', 'The cart preview calculates totals from saved product data without creating an order.', [
+          step('Submit the preview', 'browser', HTTP, 'The cart sends its items and coupon code to the preview endpoint.', ['public/js/app.js']),
+          step('Resolve products', 'store', READ, 'The preview handler reads product prices and HSN codes from the JSON file.', ['routes/reports.js', 'lib/store.js']),
+          step('Calculate the preview', 'rules', MEMORY, 'The handler checks the coupon. An invalid coupon produces a status message and a preview calculated without the discount.', ['lib/pricing.js', 'lib/coupons.js', 'lib/tax.js']),
+          step('Return totals and coupon status', 'route', HTTP, 'The response supplies totals and coupon feedback for the cart. The handler makes no store write.', ['routes/reports.js', 'public/js/app.js'])
+        ])]
+      },
+      {
+        id: 'invoice', label: 'Printable invoice', route: 'server.js', endpoint: 'GET /orders/:id/invoice',
+        scenarios: [scenario('Print a saved order', 'The invoice opens a saved order and returns HTML. Viewing or printing it only reads the store.', [
+          step('Open the invoice URL', 'browser', HTTP, 'The browser opens the printable order endpoint outside the /api routes.', ['public/js/app.js', 'server.js']),
+          step('Find the saved order', 'store', READ, 'Express loads the JSON and looks up the order ID. A missing order returns 404.', ['server.js', 'lib/store.js', 'lib/orders.js']),
+          step('Build the tax breakdown', 'rules', MEMORY, 'The invoice uses recorded amounts for the summary and shared pricing logic to reconstruct GST for each line from the current rate rules and recorded discount.', ['lib/invoice.js', 'lib/pricing.js', 'lib/tax.js'],
+            'A saved total of ₹2,007.25 and GST of ₹157.25 appear in the invoice summary. Historical orders store aggregate GST.'),
+          step('Return printable HTML', 'route', HTTP, 'Express returns the generated invoice page with a browser print action.', ['server.js', 'lib/invoice.js'])
+        ])]
+      },
+      {
+        id: 'gst-audit', label: 'GST reconciliation', route: 'routes/reports.js', endpoint: 'GET /api/reports/gst-reconciliation',
+        scenarios: [scenario('Compare invoices and ledger', 'The GST audit compares invoice summary amounts with the order ledger for active orders.', [
+          step('Request the audit', 'browser', HTTP, 'The GST Audit tab requests reconciliation rows from Express.', ['public/js/app.js', 'routes/reports.js']),
+          step('Load orders', 'store', READ, 'The report handler reads the saved orders from the store.', ['routes/reports.js', 'lib/store.js']),
+          step('Compare invoice and ledger totals', 'rules', MEMORY, 'The report skips cancelled orders, builds invoice figures, and compares invoice total and GST with the saved order amounts.', ['lib/reports.js', 'lib/invoice.js']),
+          step('Return rows and mismatch counts', 'route', HTTP, 'The browser receives the comparison rows and totals. This endpoint only reads stored data.', ['routes/reports.js', 'public/js/app.js'])
+        ])]
+      },
+      {
+        id: 'history', label: 'Order history', route: 'routes/orders.js', endpoint: 'GET /api/orders',
+        scenarios: [scenario('Filter by date', 'Order history can combine text search, status, and inclusive date bounds.', [
+          step('Send the filters', 'browser', HTTP, 'The history table sends search, status, and date values in the query string.', ['public/js/app.js', 'routes/orders.js']),
+          step('Read orders', 'store', READ, 'The handler loads the order records, including their original displayed dates.', ['routes/orders.js', 'lib/store.js']),
+          step('Filter and sort', 'rules', MEMORY, 'Date utilities normalize both legacy and date-picker formats to chronological keys. The history sorts newest first, using higher order IDs to break ties.', ['lib/dates.js', 'lib/orders.js'],
+            '2022-01-01 through 2022-01-31 includes both boundaries and excludes December and February.'),
+          step('Return matching orders', 'route', HTTP, 'The handler returns the filtered array without writing the store.', ['routes/orders.js'])
+        ])]
+      },
+      {
+        id: 'cancellation', label: 'Cancellation', route: 'routes/orders.js', endpoint: 'POST /api/orders/:id/cancel',
+        scenarios: [
+          scenario('Cancel a Khata order', 'A successful cancellation restores physical stock once and reverses the original Khata debit.', [
+            cancellationSubmit, cancellationRead,
+            step('Restore stock and reverse the debit', 'rules', MEMORY, 'The order is marked cancelled, sold quantities return to physical stock, and Khata billing is reversed where applicable.', ['lib/orders.js', 'lib/inventory.js', 'lib/ledger.js'],
+              'Returning two sold units increases physical stock by two. A hold for three units remains a hold for three.'),
+            step('Save the cancellation', 'store', WRITE, 'The handler appends a cancellation audit entry and writes the updated store.', ['routes/orders.js', 'lib/store.js']),
+            step('Return the updated order', 'route', HTTP, 'Express returns 200 OK with the cancelled order.', ['routes/orders.js'])
+          ]),
+          scenario('Already cancelled', 'A repeated cancellation exits before stock restoration, debit reversal, or saving.', [
+            cancellationSubmit, cancellationRead,
+            step('Stop at the status check', 'rules', MEMORY, 'The order module rejects the request when the recorded status is already cancelled.', ['lib/orders.js']),
+            step('Return 400 Bad Request', 'route', HTTP, 'The handler responds with an error and skips the audit and write calls.', ['routes/orders.js'])
+          ])
+        ]
+      },
+      {
+        id: 'settlement', label: 'Khata settlement', route: 'routes/customers.js', endpoint: 'POST /api/customers/:id/settle',
+        scenarios: [
+          scenario('Record ₹500', 'A valid payment updates the customer balance and adds a settlement record and audit entry.', [
+            settlementSubmit, settlementRead,
+            step('Validate and update the balance', 'rules', MEMORY, 'The ledger validates and converts the amount to whole paise before updating the settled total and creating a settlement record.', ['lib/ledger.js'],
+              '₹1,200 settled + ₹500 = ₹1,700 settled. The balance due falls from ₹1,232.01 to ₹732.01.'),
+            step('Save the payment and audit', 'store', WRITE, 'The customer handler appends a settlement audit entry and writes the updated JSON.', ['routes/customers.js', 'lib/store.js']),
+            step('Return the updated balance', 'route', HTTP, 'Express returns 201 Created with the payment record and updated customer.', ['routes/customers.js'])
+          ]),
+          scenario('Invalid amount', 'Invalid payments leave the settled total and balance untouched.', [
+            settlementSubmit, settlementRead,
+            step('Reject the amount', 'rules', MEMORY, 'The ledger rejects amounts that are nonpositive, nonnumeric, or have more than two decimal places.', ['lib/ledger.js'],
+              '₹0.001 is smaller than one paisa and is rejected.'),
+            step('Return 400 Bad Request', 'route', HTTP, 'The handler returns the validation error and skips the settlement audit and write.', ['routes/customers.js'])
+          ])
+        ]
+      }
+    ];
+
+    const modules = {
+      browser: {
+        title: 'Browser UI',
+        text: 'The browser handles forms, display, and navigation. It sends requests to Express and displays the returned JSON or printable HTML.',
+        sources: ['public/index.html', 'public/js/app.js', 'public/css/style.css']
+      },
+      route: {
+        title: 'Express request handlers',
+        text: 'server.js serves static files and mounts the API routers. A handler orchestrates the request, calls the business rules, and decides whether to save changes.',
+        sources: ['server.js']
+      },
+      rules: {
+        title: 'Business rules',
+        text: 'Pricing, GST, inventory, order, and ledger modules calculate results or update the in-memory records passed by the handler.',
+        sources: ['lib/pricing.js', 'lib/tax.js', 'lib/inventory.js', 'lib/orders.js', 'lib/ledger.js', 'config.js']
+      },
+      store: {
+        title: 'Store module',
+        text: 'The store loads and parses the JSON file, applies defaults for missing collections, and serializes the updated state when a handler requests a save.',
+        sources: ['lib/store.js']
+      },
+      database: {
+        title: 'JSON data file',
+        text: 'The file holds products, orders, customers, settlements, and audit entries. A write replaces the serialized state in this file.',
+        sources: ['data/db.json']
+      }
+    };
+
+    const ui = Object.fromEntries([
+      'explorer', 'workflow-list', 'flow-title', 'endpoint', 'scenario-field', 'scenario',
+      'flow-summary', 'route-file', 'steps', 'previous', 'next', 'detail-title', 'operation',
+      'detail-text', 'source-files', 'example', 'example-text', 'return-to-step', 'announcement',
+      'map-caption'
+    ].map(id => [id, document.getElementById(id)]));
+    const moduleButtons = Array.from(document.querySelectorAll('[data-node]'));
+    const connectors = Array.from(document.querySelectorAll('[data-edge]'));
+    let workflow = workflows[0];
+    let scenarioIndex = 0;
+    let stepIndex = 0;
+    let inspectedModule = '';
+
+    function element(tag, text, className) {
+      const item = document.createElement(tag);
+      item.textContent = text;
+      if (className) item.className = className;
+      return item;
+    }
+
+    function activeScenario() {
+      return workflow.scenarios[scenarioIndex];
+    }
+
+    function chooseStep(index) {
+      stepIndex = index;
+      inspectedModule = '';
+      renderStep();
+    }
+
+    const workflowButtons = workflows.map(item => {
+      const button = element('button', item.label);
+      button.type = 'button';
+      button.addEventListener('click', () => {
+        if (window.location.hash !== '#' + item.id) window.location.hash = item.id;
+      });
+      ui['workflow-list'].append(button);
+      return button;
+    });
+
+    function chooseWorkflow() {
+      const id = window.location.hash.slice(1);
+      workflow = workflows.find(item => item.id === id) || workflows[0];
+      scenarioIndex = 0;
+      stepIndex = 0;
+      inspectedModule = '';
+      workflowButtons.forEach((button, index) => {
+        button.setAttribute('aria-pressed', String(workflows[index] === workflow));
+      });
+      ui['flow-title'].textContent = workflow.label;
+      ui.endpoint.textContent = workflow.endpoint;
+      ui['route-file'].replaceChildren();
+      workflow.route.split('/').forEach((part, index) => {
+        if (index > 0) ui['route-file'].append('/', document.createElement('wbr'));
+        ui['route-file'].append(part);
+      });
+      ui['scenario-field'].hidden = workflow.scenarios.length < 2;
+      ui.scenario.replaceChildren(...workflow.scenarios.map((item, index) => {
+        const option = element('option', item.name);
+        option.value = String(index);
+        return option;
+      }));
+      renderSteps();
+    }
+
+    function renderSteps() {
+      const selected = activeScenario();
+      ui['flow-summary'].textContent = selected.summary;
+      ui.steps.replaceChildren(...selected.steps.map((item, index) => {
+        const row = document.createElement('li');
+        const button = element('button', '');
+        const number = element('span', String(index + 1), 'step-index');
+        number.setAttribute('aria-hidden', 'true');
+        button.type = 'button';
+        button.append(number, element('span', item.title, 'step-title'));
+        button.addEventListener('click', () => chooseStep(index));
+        row.append(button);
+        return row;
+      }));
+      renderStep();
+    }
+
+    function renderStep() {
+      const steps = activeScenario().steps;
+      const active = steps[stepIndex];
+      const accessesDisk = active.operation === READ || active.operation === WRITE;
+      const layerNames = {
+        browser: 'Browser → Express',
+        route: 'Express → Browser',
+        rules: 'Express → Business rules',
+        store: active.operation === READ ? 'Data file → Store → Express' : 'Express → Store → Data file'
+      };
+      const activeEdges = accessesDisk ? ['disk', 'transfer'] : [active.layer === 'rules' ? 'invoke' : 'send'];
+
+      moduleButtons.forEach(button => {
+        const node = button.dataset.node;
+        button.classList.toggle('is-current', node === active.layer || (accessesDisk && node === 'database'));
+        button.setAttribute('aria-pressed', String(inspectedModule === node));
+      });
+      const directions = {
+        send: active.layer === 'browser' ? '→' : active.layer === 'route' ? '←' : '⇄',
+        invoke: '→',
+        disk: accessesDisk ? (active.operation === READ ? '↑' : '↓') : '↕',
+        transfer: accessesDisk ? (active.operation === READ ? '←' : '→') : '↔'
+      };
+      connectors.forEach(line => {
+        const edge = line.dataset.edge;
+        line.classList.toggle('is-active', activeEdges.includes(edge));
+        line.textContent = directions[edge];
+      });
+      ui['map-caption'].textContent = layerNames[active.layer] + ' · ' + active.operation;
+
+      Array.from(ui.steps.querySelectorAll('button')).forEach((button, index) => {
+        if (index === stepIndex) button.setAttribute('aria-current', 'step');
+        else button.removeAttribute('aria-current');
+      });
+      ui.previous.disabled = stepIndex === 0;
+      ui.next.disabled = stepIndex === steps.length - 1;
+      renderInspection(active);
+    }
+
+    function renderInspection(active) {
+      const detail = modules[inspectedModule] || active;
+      const moduleIsOpen = Boolean(inspectedModule);
+      ui['detail-title'].textContent = detail.title;
+      ui.operation.hidden = moduleIsOpen;
+      ui.operation.textContent = active.operation;
+      ui.operation.dataset.type = active.operation;
+      ui['detail-text'].textContent = detail.text;
+      const files = inspectedModule === 'route' && workflow.route !== 'server.js'
+        ? [...detail.sources, workflow.route] : detail.sources;
+      ui['source-files'].replaceChildren(...files.map(path => {
+        const entry = document.createElement('li');
+        entry.append(element('code', path));
+        return entry;
+      }));
+      ui.example.hidden = !detail.example;
+      ui['example-text'].textContent = detail.example || '';
+      ui['return-to-step'].hidden = !moduleIsOpen;
+      ui.announcement.textContent = moduleIsOpen ? detail.title : 'Step ' + (stepIndex + 1) + '. ' + active.title;
+    }
+
+    moduleButtons.forEach(button => button.addEventListener('click', () => {
+      inspectedModule = inspectedModule === button.dataset.node ? '' : button.dataset.node;
+      renderStep();
+      if (inspectedModule && window.matchMedia('(max-width: 43rem)').matches) {
+        ui['detail-title'].scrollIntoView({ block: 'nearest' });
+      }
+    }));
+    ui.scenario.addEventListener('change', () => {
+      scenarioIndex = Number(ui.scenario.value);
+      stepIndex = 0;
+      inspectedModule = '';
+      renderSteps();
+    });
+    ui.previous.addEventListener('click', () => chooseStep(stepIndex - 1));
+    ui.next.addEventListener('click', () => chooseStep(stepIndex + 1));
+    ui['return-to-step'].addEventListener('click', () => {
+      chooseStep(stepIndex);
+      ui.steps.querySelector('[aria-current="step"]').focus();
+    });
+    window.addEventListener('hashchange', chooseWorkflow);
+
+    chooseWorkflow();
+    ui.explorer.hidden = false;
+  </script>
 </body>
 </html>
