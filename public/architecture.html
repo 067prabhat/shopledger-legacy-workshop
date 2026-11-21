@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="ShopLedger architecture and request flows for billing, inventory, and Khata.">
+  <title>ShopLedger architecture</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --canvas: #f4f7fa;
+      --paper: #ffffff;
+      --ink: #162640;
+      --muted: #465772;
+      --line: #cbd6e4;
+      --blue: #254e97;
+      --blue-surface: #eef4ff;
+      --teal: #0d6158;
+      --teal-surface: #e6f6f2;
+      --amber: #744808;
+      --amber-surface: #fff5e2;
+      font: 16px/1.55 system-ui, sans-serif;
+      scroll-padding-top: 1rem;
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--canvas); color: var(--ink); }
+    a { color: inherit; text-underline-offset: 0.2em; }
+    a:focus-visible { outline: 3px solid currentColor; outline-offset: 4px; }
+    code { font: 0.9em ui-monospace, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+    h1, h2, h3, p, ol, ul { margin-block-start: 0; }
+    h1, h2, h3 { line-height: 1.18; }
+    h1 { margin-block-end: 0.7rem; font-size: clamp(2rem, 5vw, 3.5rem); letter-spacing: -0.04em; }
+    h2 { margin-block-end: 0.6rem; font-size: clamp(1.35rem, 3vw, 2rem); letter-spacing: -0.03em; }
+    h3 { margin-block-end: 0.55rem; font-size: 1.05rem; }
+
+    .wrap { width: min(100% - 2rem, 72rem); margin-inline: auto; }
+    header { background: #142640; color: white; padding-block: clamp(2rem, 6vw, 4.25rem) 1.45rem; }
+    header p { color: #d8e5f6; max-width: 55ch; }
+    nav { display: flex; flex-wrap: wrap; gap: 0.55rem 1.25rem; font-weight: 600; }
+    main { padding-block: 1.75rem 3rem; }
+    section + section { margin-top: 1.75rem; }
+    .panel { background: var(--paper); padding: clamp(1rem, 3vw, 1.6rem); border: 1px solid var(--line); border-radius: 1rem; }
+    .intro, .fine-print { color: var(--muted); max-width: 76ch; }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(var(--columns, 3), minmax(0, 1fr));
+      gap: 1.75rem;
+      padding: 0;
+      margin: 1.2rem 0 0;
+      list-style: none;
+    }
+    .flow > li {
+      position: relative;
+      min-width: 0;
+      padding: 0.85rem 0.95rem;
+      border: 1px solid var(--line);
+      border-radius: 0.7rem;
+      background: var(--blue-surface);
+    }
+    .flow > li:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      z-index: 1;
+      width: 1.55rem;
+      height: 0.75rem;
+      top: calc(50% - 0.375rem);
+      left: calc(100% + 0.1rem);
+      background: var(--blue);
+      clip-path: polygon(0 43%, 72% 43%, 72% 10%, 100% 50%, 72% 90%, 72% 57%, 0 57%);
+    }
+    .flow p, .card p { margin: 0; color: var(--muted); }
+    .flow .rules, .workflow > li { background: var(--teal-surface); }
+    .workflow { --columns: 5; counter-reset: steps; }
+    .workflow > li { counter-increment: steps; }
+    .workflow h3 { display: flex; align-items: baseline; gap: 0.45rem; }
+    .workflow h3::before { content: counter(steps) "."; color: var(--teal); }
+
+    .storage {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+      align-items: center;
+      gap: 0.65rem;
+      margin-top: 1rem;
+      padding: 0.9rem;
+      border-radius: 0.7rem;
+      color: var(--amber);
+      background: var(--amber-surface);
+      font-weight: 600;
+      text-align: center;
+    }
+    .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.9rem; margin-top: 1rem; }
+    .card { min-width: 0; padding: 0.9rem; border: 1px solid var(--line); border-radius: 0.7rem; }
+    .card code { display: block; color: var(--blue); margin-bottom: 0.45rem; }
+    .fine-print { margin: 1rem 0 0; }
+
+    @media (max-width: 58rem) {
+      .workflow { --columns: 1; }
+      .workflow > li:not(:last-child)::after {
+        top: calc(100% + 0.55rem);
+        left: calc(50% - 0.775rem);
+        transform: rotate(90deg);
+      }
+    }
+    @media (max-width: 42rem) {
+      .flow, .cards { grid-template-columns: 1fr; }
+      .flow > li:not(:last-child)::after {
+        top: calc(100% + 0.55rem);
+        left: calc(50% - 0.775rem);
+        transform: rotate(90deg);
+      }
+    }
+    @media print {
+      body, header { background: white; color: #162640; }
+      header p { color: #465772; }
+      nav { display: none; }
+      .wrap { width: 100%; }
+      header, main { padding-block: 1rem; }
+      .panel { break-inside: avoid; }
+      .workflow { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+      .workflow > li:not(:last-child)::after {
+        top: calc(50% - 0.375rem);
+        left: calc(100% + 0.1rem);
+        transform: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>ShopLedger architecture</h1>
+      <p>Follow a request from the shop counter to the modules that price orders, update stock, and record payments.</p>
+      <nav aria-label="On this page">
+        <a href="#system">System map</a>
+        <a href="#checkout">Checkout</a>
+        <a href="#workflows">Other workflows</a>
+      </nav>
+    </div>
+  </header>
+  <main class="wrap">
+    <section class="panel" id="system">
+      <h2>System map</h2>
+      <p class="intro">Express serves the browser UI, dispatches JSON API requests under <code>/api</code>, and returns printable invoice HTML from a separate route.</p>
+      <ol class="flow" role="list" aria-label="Request path">
+        <li>
+          <h3>Browser</h3>
+          <p><code>public/index.html</code> and <code>public/js/app.js</code> display the register, order history, inventory, and Khata balances.</p>
+        </li>
+        <li>
+          <h3>Express routes</h3>
+          <p><code>server.js</code> serves <code>public/</code> and connects the product, order, customer, and report routes.</p>
+        </li>
+        <li class="rules">
+          <h3>Business rules</h3>
+          <p><code>lib/</code> handles pricing, coupons, GST, inventory, orders, dates, Khata, invoices, and reports.</p>
+        </li>
+      </ol>
+      <div class="storage" aria-label="The handlers use the store module to read and write the JSON file">
+        <span>Request handlers</span><span aria-hidden="true">↔</span><span><code>lib/store.js</code> ↔ <code>data/db.json</code></span>
+      </div>
+      <p class="fine-print"><code>config.js</code> supplies coupon rules, GST slabs, and shop settings. The JSON file holds the shop's products, orders, customers, settlements, and audit log.</p>
+    </section>
+
+    <section class="panel" id="checkout">
+      <h2>Checkout</h2>
+      <p class="intro"><code>POST /api/orders</code> records an order after stock, coupon, and any applicable Khata credit checks succeed.</p>
+      <ol class="flow workflow" role="list" aria-label="Checkout sequence">
+        <li>
+          <h3>Resolve items</h3>
+          <p>Read the store and resolve the submitted product IDs and quantities.</p>
+        </li>
+        <li>
+          <h3>Check stock</h3>
+          <p>Check the combined quantity per product against physical stock minus wholesale holds.</p>
+        </li>
+        <li>
+          <h3>Price the order</h3>
+          <p>Validate the coupon, distribute its discount, and apply the GST slab to each discounted line.</p>
+        </li>
+        <li>
+          <h3>Apply changes</h3>
+          <p>Check the Khata credit limit and record the charge when applicable, then deduct physical stock.</p>
+        </li>
+        <li>
+          <h3>Save the sale</h3>
+          <p>Save the order totals and audit entry in the JSON file and return <code>201 Created</code>.</p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="panel" id="workflows">
+      <h2>Other workflows</h2>
+      <div class="cards">
+        <article class="card">
+          <h3>Invoice and GST audit</h3>
+          <code>GET /orders/:id/invoice<br>GET /api/reports/gst-reconciliation</code>
+          <p>Both use <code>lib/invoice.js</code>. The invoice uses recorded totals and checkout's calculation for line GST. The reconciliation report compares the invoice summary with the ledger.</p>
+        </article>
+        <article class="card">
+          <h3>Cancel an order</h3>
+          <code>POST /api/orders/:id/cancel</code>
+          <p><code>lib/orders.js</code> checks the current status, returns physical stock, and reverses a Khata charge where applicable. Wholesale holds are preserved.</p>
+        </article>
+        <article class="card">
+          <h3>Order history</h3>
+          <code>GET /api/orders</code>
+          <p><code>lib/dates.js</code> converts saved dates and filter values into sortable keys. <code>lib/orders.js</code> applies the inclusive bounds and sorts newest first.</p>
+        </article>
+        <article class="card">
+          <h3>Khata settlement</h3>
+          <code>POST /api/customers/:id/settle</code>
+          <p><code>lib/ledger.js</code> validates the payment and updates the balance in whole paise. The customer route records the settlement and audit entry.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
